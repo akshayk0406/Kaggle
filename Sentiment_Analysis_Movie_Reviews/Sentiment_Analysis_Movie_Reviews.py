@@ -5,7 +5,24 @@
 
 import numpy as np
 import pandas as pd
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import SGDClassifier
+from sklearn.svm import SVC
+from sklearn.grid_search import GridSearchCV
 
+def get_predictions(clf,X_train,Y_train,X_test,model_name):
+	clf.fit(X_train,Y_train)
+	predict = clf.predict(X_test)
+	print "Testing using " + str(model_name) + " done"
+	return predict
+
+def write_predictions(PhraseId,Sentiment,suff,base_dir):
+	result_df = pd.DataFrame({'PhraseId':PhraseId,'Sentiment':Sentiment})
+	result_df.to_csv(base_dir + 'output_'+str(suff)+'.csv',index=False)
 
 # In[12]:
 
@@ -16,52 +33,40 @@ test = pd.read_csv(base_dir + "test.tsv",sep="\t")
 input_cols = ['PhraseId','SentenceId','Phrase']
 
 X_train = train[input_cols]
-Y_train = train[['Sentiment']]
-
-
-# In[13]:
-
-from sklearn.cross_validation import train_test_split
-x_train,x_test,y_train,y_test = train_test_split(X_train,Y_train,train_size=0.7)
-
-
-# In[25]:
+Y_train = train[['Sentiment']].values
+X_test = test[input_cols]
 
 #Creating Document Term Matrix from given text. Applying appropriate transformations
-from sklearn.feature_extraction.text import CountVectorizer
+vectorizer = CountVectorizer(stop_words='english',lowercase=True)
+X_train_dt_matrix = vectorizer.fit_transform(X_train.Phrase)
+X_test_dt_matrix = vectorizer.transform(X_test.Phrase)
 
-required_input = np.append(X_train.Phrase,test.Phrase)
-vectorizer = CountVectorizer(stop_words='english',lowercase=True,min_df=0.005)
-vectorizer.fit(required_input)
-dt_matrix = vectorizer.transform(required_input).toarray()
+tfidf_transformer = TfidfTransformer()
+X_train_tfidf = tfidf_transformer.fit_transform(X_train_dt_matrix)
+X_test_tfidf = tfidf_transformer.transform(X_test_dt_matrix)
 
+svc_param_grid = {'kernel': ['rbf'],'C': [1, 10, 100, 1000]}
+gs_lr = GridSearchCV(SVC(),param_grid=svc_param_grid,cv=5)
+predicted = get_predictions(gs_lr,X_train_tfidf,Y_train.ravel(),X_test_tfidf,'Support Vector Machines')
+write_predictions(X_test['PhraseId'],predicted,'SVC',base_dir)
 
-# In[26]:
+'''
+clf_sgd = SGDClassifier(loss='hinge', penalty='l2', random_state=42)
+predicted = get_predictions(clf_sgd,X_train_tfidf,Y_train.ravel(),X_test_tfidf,'Stochastic Gradient Descent')
+write_predictions(X_test['PhraseId'],predicted,'SGD',base_dir)
+'''
 
-from sklearn.grid_search import GridSearchCV
-from sklearn.ensemble import RandomForestClassifier
+lr_param_grid = {'penalty':['l1','l2'],'C':[0.001, 0.01, 0.1, 1, 10, 100, 1000]}
+gs_lr = GridSearchCV(LogisticRegression(),param_grid=lr_param_grid,cv=5)
+predicted = get_predictions(gs_lr,X_train_tfidf,Y_train.ravel(),X_test_tfidf,'Logistic Regression')
+write_predictions(X_test['PhraseId'],predicted,'LR',base_dir)
 
-#Using RandomForest Classifier
-rfc = RandomForestClassifier()
-param_grid = {'n_estimators': [50],'max_features': ['auto']}
+clf = MultinomialNB()
+predicted = get_predictions(clf,X_train_tfidf,Y_train.ravel(),X_test_tfidf,'Multinomial Bayes')
+write_predictions(X_test['PhraseId'],predicted,'NB',base_dir)
 
-GS_rfc = GridSearchCV(estimator=rfc, param_grid=param_grid, cv= 5)
-GS_rfc.fit(dt_matrix[0:len(x_train),], y_train.values.ravel())
-y_test, y_pred = y_test, GS_rfc.predict(dt_matrix[len(x_train):len(x_train)+len(x_test,])
-
-
-# In[27]:
-
-from sklearn.linear_model import LogisticRegression
-param_grid = {'C': [0.001, 0.01, 0.1, 1, 10, 100, 1000] }
-clf = LogisticRegression()
-GS_lr = GridSearchCV(estimator=clf,param_grid=param_grid,cv=5)
-GS_lr.fit(dt_matrix[0:len(x_train),], y_train.values.ravel())
-
-y_test, y_pred_lr = y_test, GS_lr.predict(dt_matrix[len(x_train):len(x_train)+len(x_test,])
-
-# In[34]:
-
-accuracy_lr = (y_true['Sentiment']==y_pred_lr).sum()
-accuracy_rf = (y_true['Sentiment']==y_pred).sum()
-
+'''
+clf_rf = RandomForestClassifier()
+predicted = get_predictions(clf,X_train_tfidf,Y_train.ravel(),X_test_tfidf,'Random Forests')
+write_predictions(X_test['PhraseId'],predicted,'RF',base_dir)
+'''
